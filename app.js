@@ -64,7 +64,7 @@ function accueil() {
     ${!cfg.destinataire ? `<div class="carte info">Avant la première utilisation, ouvrez les <b>paramètres ⚙</b> pour saisir l’adresse mail de réception.</div>` : ''}
     <button class="tuile" id="go"><span>🚗</span>${brouillon ? 'Reprendre la check-list en cours' : 'Nouvelle check-list véhicule'}</button>
     ${brouillon ? `<button class="tuile" id="neuf"><span>➕</span>Recommencer à zéro</button>` : ''}
-    <p class="sous" style="text-align:center">Fonctionne sans réseau. L’envoi se fait par mail.</p>`;
+    <p class="sous" style="text-align:center">Fonctionne sans réseau. L’envoi se fait par mail.<br>Version 5</p>`;
   document.getElementById('go').onclick = () => { if (!f) nouveau(); afficher(); };
   const n = document.getElementById('neuf');
   if (n) n.onclick = () => { if (confirm('Effacer la check-list en cours ?')) { nouveau(); afficher(); } };
@@ -195,9 +195,10 @@ function envoyer() {
   ecranEnvoi();
 }
 
+let partageOK = true;
 function ecranEnvoi() {
   const p = preparer();
-  const partage = !!(navigator.canShare && navigator.canShare({ files: [p.fichier] }));
+  const partage = partageOK && !!(navigator.canShare && navigator.canShare({ files: [p.fichier] }));
   document.getElementById('titre').textContent = 'Envoi';
   pied.classList.add('cache'); setProg(nbEtapes - 1);
   vue.innerHTML = `<div class="carte"><h2>Envoyer la check-list</h2>
@@ -216,14 +217,18 @@ function ecranEnvoi() {
     <button class="btn sec" id="b_fini">✅ C’est envoyé, terminer</button>
     <button class="btn sec" id="b_retour">← Revenir à la check-list</button></div>`;
   const q = id => document.getElementById(id);
+  const telecharger = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(p.fichier); a.download = p.nom; document.body.appendChild(a); a.click(); a.remove(); };
+  const ouvrirMail = () => { location.href = `mailto:${cfg.destinataire}?subject=${encodeURIComponent(p.objet)}&body=${encodeURIComponent(p.corps)}`; };
+  const secours = () => { partageOK = false; ecranEnvoi(true); };
   if (partage) q('b_share').onclick = async () => {
-    try { await navigator.share({ files: [p.fichier], title: p.objet, text: p.corps }); }
-    catch (e) { if (e.name !== 'AbortError') alert('Partage impossible : ' + e.message); }
+    try { await navigator.share({ files: [p.fichier] }); }
+    catch (e) {
+      if (e.name === 'AbortError') return;
+      alert('Ce téléphone refuse le partage direct du fichier. On passe à l’envoi en 2 gestes.');
+      secours();
+    }
   };
-  else {
-    q('b_dl').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(p.fichier); a.download = p.nom; document.body.appendChild(a); a.click(); a.remove(); };
-    q('b_mail').onclick = () => { location.href = `mailto:${cfg.destinataire}?subject=${encodeURIComponent(p.objet)}&body=${encodeURIComponent(p.corps)}`; };
-  }
+  else { q('b_dl').onclick = telecharger; q('b_mail').onclick = ouvrirMail; }
   q('b_retour').onclick = () => afficher();
   q('b_fini').onclick = () => {
     if (!confirm('Confirmer : le mail est parti ? La check-list sera effacée du téléphone.')) return;
