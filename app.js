@@ -1,4 +1,6 @@
 'use strict';
+// NATIF = app Android installée (APK Capacitor) ; sinon navigateur / PWA.
+const NATIF = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 // MTG – Check-list état véhicule (PWA hors ligne). Aucune donnée ni adresse dans ce code.
 const VERSION_FORMAT = 1;
 
@@ -64,7 +66,7 @@ function accueil() {
     ${!cfg.destinataire ? `<div class="carte info">Avant la première utilisation, ouvrez les <b>paramètres ⚙</b> pour saisir l’adresse mail de réception.</div>` : ''}
     <button class="tuile" id="go"><span>🚗</span>${brouillon ? 'Reprendre la check-list en cours' : 'Nouvelle check-list véhicule'}</button>
     ${brouillon ? `<button class="tuile" id="neuf"><span>➕</span>Recommencer à zéro</button>` : ''}
-    <p class="sous" style="text-align:center">Fonctionne sans réseau. L’envoi se fait par mail.<br>Version 5</p>`;
+    <p class="sous" style="text-align:center">Fonctionne sans réseau. L’envoi se fait par mail.<br>Version 6${NATIF ? ' · app Android' : ''}</p>`;
   document.getElementById('go').onclick = () => { if (!f) nouveau(); afficher(); };
   const n = document.getElementById('neuf');
   if (n) n.onclick = () => { if (confirm('Effacer la check-list en cours ?')) { nouveau(); afficher(); } };
@@ -185,7 +187,8 @@ function preparer() {
         etat: r.etat, note: r.note || '', photos: r.photos || [] })) } };
   const nom = `etat-vehicule_${f.immat.replace(/[^A-Z0-9]/g, '')}_${f.date}.txt`;
   const objet = `[MTG] État véhicule ${f.immat} – ${f.date}${defauts().length ? ' – ' + defauts().length + ' défaut(s)' : ''}`;
-  return { nom, objet, corps: texteMail(), fichier: new File([JSON.stringify(payload)], nom, { type: 'text/plain' }) };
+  const json = JSON.stringify(payload);
+  return { nom, objet, json, corps: texteMail(), fichier: new File([json], nom, { type: 'text/plain' }) };
 }
 
 function envoyer() {
@@ -198,7 +201,7 @@ function envoyer() {
 let partageOK = true;
 function ecranEnvoi() {
   const p = preparer();
-  const partage = partageOK && !!(navigator.canShare && navigator.canShare({ files: [p.fichier] }));
+  const partage = NATIF || partageOK && !!(navigator.canShare && navigator.canShare({ files: [p.fichier] }));
   document.getElementById('titre').textContent = 'Envoi';
   pied.classList.add('cache'); setProg(nbEtapes - 1);
   vue.innerHTML = `<div class="carte"><h2>Envoyer la check-list</h2>
@@ -221,9 +224,16 @@ function ecranEnvoi() {
   const ouvrirMail = () => { location.href = `mailto:${cfg.destinataire}?subject=${encodeURIComponent(p.objet)}&body=${encodeURIComponent(p.corps)}`; };
   const secours = () => { partageOK = false; ecranEnvoi(true); };
   if (partage) q('b_share').onclick = async () => {
-    try { await navigator.share({ files: [p.fichier] }); }
+    try {
+      if (NATIF) {
+        const { Filesystem, Share } = window.Capacitor.Plugins;
+        const r = await Filesystem.writeFile({ path: p.nom, data: p.json, directory: 'CACHE', encoding: 'utf8' });
+        await Share.share({ title: p.objet, text: p.corps, files: [r.uri], dialogTitle: 'Envoyer par mail' });
+      } else await navigator.share({ files: [p.fichier] });
+    }
     catch (e) {
-      if (e.name === 'AbortError') return;
+      if (e.name === 'AbortError' || /cancel/i.test(String(e.message || e))) return;
+      if (NATIF) return alert('Partage impossible : ' + (e.message || e));
       alert('Ce téléphone refuse le partage direct du fichier. On passe à l’envoi en 2 gestes.');
       secours();
     }
@@ -256,5 +266,5 @@ document.getElementById('retour').onclick = accueil;
 document.getElementById('prec').onclick = () => { if (etape > 0) { etape--; sauver(); afficher(); } };
 document.getElementById('suiv').onclick = () => { if (etape < nbEtapes - 1) { etape++; sauver(); afficher(); } else envoyer(); };
 
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+if (!NATIF && 'serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
 accueil();
