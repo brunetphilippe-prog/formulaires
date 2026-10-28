@@ -15,6 +15,22 @@ const SECTIONS = [
     'Niveau d’huile', 'Liquide lave-glace', 'Carte grise / assurance à bord', 'Carte carburant'] },
 ];
 
+// Parc véhicules MTG – à mettre à jour ici (puis changer VERSION dans sw.js).
+// actif:false = hors service, affiché grisé mais sélectionnable.
+const FLOTTE = [
+  { num: 'V001', immat: 'EV297MW',  marque: 'Renault', modele: 'Megane 4',  cat: 'VL', km: 157742 },
+  { num: 'V002', immat: 'GG309LJ',  marque: 'Renault', modele: 'Megane 4',  cat: 'VL', km: 91975 },
+  { num: 'V003', immat: 'FC893KD',  marque: 'Peugeot', modele: '308',       cat: 'VL', km: 161495 },
+  { num: 'V004', immat: 'FC916XY',  marque: 'Peugeot', modele: '308',       cat: 'VL', km: 171183 },
+  { num: 'V005', immat: 'GJ674NL',  marque: 'Peugeot', modele: 'Rifter',    cat: 'VL', km: 36855 },
+  { num: 'V006', immat: 'GK299EL',  marque: 'Peugeot', modele: 'Rifter',    cat: 'VL', km: 49647 },
+  { num: 'V007', immat: 'CN596WG',  marque: 'Renault', modele: 'Megane 3',  cat: 'VL', km: 293858 },
+  { num: 'V008', immat: '752BEH31', marque: 'Renault', modele: 'Scenic',    cat: 'VL', km: 368823, actif: false },
+  { num: 'V009', immat: 'CZ698KX',  marque: 'Renault', modele: 'Trafic',    cat: 'VU', km: 88053 },
+  { num: 'V010', immat: 'HJ202CY',  marque: 'Renault', modele: 'R5 E-tech', cat: 'VL', km: 604 },
+];
+const vehicule = immat => FLOTTE.find(v => v.immat === immat);
+
 // ---------- stockage local ----------
 const lire = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
 const ecrire = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { alert('Mémoire pleine : retirez des photos.'); } };
@@ -71,18 +87,20 @@ function afficher() {
 }
 
 function ecranIdent() {
-  const liste = cfg.vehicules.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
-  vue.innerHTML = `<div class="carte"><h2>Le véhicule</h2><p class="sous">Étape 1 sur ${nbEtapes}</p>
-    <label>Immatriculation</label>
-    <input id="immat" list="vl" autocomplete="off" placeholder="AB-123-CD" value="${esc(f.immat)}" style="text-transform:uppercase">
-    <datalist id="vl">${liste.map(v => `<option value="${esc(v)}">`).join('')}</datalist>
-    <label>Kilométrage</label><input id="km" type="number" inputmode="numeric" value="${esc(f.km)}">
-    <label>Niveau de carburant</label>
+  const v = vehicule(f.immat);
+  vue.innerHTML = `<div class="carte"><h2>Le véhicule</h2><p class="sous">Étape 1 sur ${nbEtapes} · touchez votre véhicule</p>
+    <div class="flotte">${FLOTTE.map(x => `<button class="veh ${x.immat === f.immat ? 'on' : ''} ${x.actif === false ? 'hs' : ''}" data-i="${x.immat}">
+      <b>${x.immat}</b><span>${x.num} · ${x.marque} ${x.modele}${x.actif === false ? ' · hors service' : ''}</span></button>`).join('')}</div>
+    <label>Kilométrage${v ? ` <span class="sous">(dernier connu : ${v.km.toLocaleString('fr-FR')} km)</span>` : ''}</label>
+    <input id="km" type="number" inputmode="numeric" value="${esc(f.km)}">
+    <label>Niveau de carburant / charge</label>
     <select id="carburant">${['', 'Plein', '3/4', '1/2', '1/4', 'Réserve'].map(o => `<option ${f.carburant === o ? 'selected' : ''}>${o}</option>`).join('')}</select>
     <label>Date</label><input id="date" type="date" value="${esc(f.date)}">
     <label>Votre nom</label><input id="agent" value="${esc(f.agent)}"></div>`;
-  ['immat', 'km', 'carburant', 'date', 'agent'].forEach(k => document.getElementById(k).oninput = e => {
-    f[k] = k === 'immat' ? e.target.value.toUpperCase() : e.target.value; sauver(); });
+  vue.querySelectorAll('.veh').forEach(b => b.onclick = () => { f.immat = b.dataset.i; sauver(); ecranIdent(); });
+  ['km', 'carburant', 'date', 'agent'].forEach(k => document.getElementById(k).oninput = e => { f[k] = e.target.value; sauver(); });
+  const km = document.getElementById('km');
+  km.onchange = () => { if (v && f.km && +f.km < v.km) alert(`Attention : ${(+f.km).toLocaleString('fr-FR')} km est inférieur au dernier relevé (${v.km.toLocaleString('fr-FR')} km).`); };
 }
 
 function ecranSection(s) {
@@ -132,7 +150,7 @@ function compresser(file, max = 1280, q = 0.6) {
 
 function manquants() {
   const m = [];
-  if (!f.immat) m.push('Immatriculation');
+  if (!f.immat) m.push('Véhicule');
   if (!f.agent) m.push('Votre nom');
   SECTIONS.forEach(s => s.items.forEach((it, i) => { if (!f.reponses[s.id + i]?.etat) m.push(`${s.titre} : ${it}`); }));
   return m;
@@ -161,7 +179,7 @@ function texteMail() {
 function preparer() {
   const payload = { format: 'mtg-soumission', version: VERSION_FORMAT, type: 'ETAT_VEHICULE', id: f.id,
     creeLe: f.cree, envoyeLe: new Date().toISOString(),
-    donnees: { immatriculation: f.immat, kilometrage: f.km ? +f.km : null, carburant: f.carburant,
+    donnees: { numero: vehicule(f.immat)?.num || null, immatriculation: f.immat, kilometrage: f.km ? +f.km : null, carburant: f.carburant,
       date: f.date, agent: f.agent, commentaire: f.commentaire,
       points: Object.entries(f.reponses).map(([cle, r]) => ({ cle, section: r.section, libelle: r.libelle,
         etat: r.etat, note: r.note || '', photos: r.photos || [] })) } };
@@ -222,11 +240,10 @@ function parametres() {
   vue.innerHTML = `<div class="carte"><h2>Paramètres</h2><p class="sous">Enregistrés uniquement sur ce téléphone.</p>
     <label>Adresse mail de réception</label><input id="p_dest" type="email" value="${esc(cfg.destinataire)}">
     <label>Votre nom (pré-rempli)</label><input id="p_agent" value="${esc(cfg.agent)}">
-    <label>Immatriculations (une par ligne)</label><textarea id="p_veh" rows="6">${esc(cfg.vehicules)}</textarea>
-    <button class="btn" id="p_ok">Enregistrer</button></div>`;
+        <button class="btn" id="p_ok">Enregistrer</button></div>`;
   document.getElementById('p_ok').onclick = () => {
     cfg = { destinataire: document.getElementById('p_dest').value.trim(), agent: document.getElementById('p_agent').value.trim(),
-            vehicules: document.getElementById('p_veh').value };
+            vehicules: '' };
     ecrire('mtg_cfg', cfg); if (f && !f.agent) { f.agent = cfg.agent; sauver(); } accueil(); };
 }
 
