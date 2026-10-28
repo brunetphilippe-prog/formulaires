@@ -1,0 +1,85 @@
+# Compile l'application Android "MTG Véhicule" (APK) à partir des fichiers du dépôt.
+# Lancement : onglet Actions > "Application Android" > Run workflow (ou automatiquement à chaque modification de app.js / index.html).
+# Résultat : en bas de la page du run, rubrique "Artifacts" > MTG-Vehicule-apk.
+name: Application Android
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['app.js', 'index.html', 'icon-512.png', '.github/workflows/android.yml']
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    env:
+      SIGNATURE: ${{ secrets.ANDROID_KEYSTORE_B64 != '' && 'oui' || 'non' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Projet Capacitor
+        run: |
+          mkdir build && cd build
+          npm init -y >/dev/null
+          npm install @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6 @capacitor/share@6 @capacitor/filesystem@6
+          mkdir www
+          cp ../index.html ../app.js ../manifest.json ../icon-192.png ../icon-512.png www/
+          cat > capacitor.config.json <<'JSON'
+          { "appId": "fr.mtg.etatvehicule", "appName": "MTG Véhicule", "webDir": "www",
+            "android": { "allowMixedContent": false } }
+          JSON
+          npx cap add android
+          npx cap sync android
+
+      - name: Icône et numéro de version
+        run: |
+          cd build/android/app
+          command -v convert >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq imagemagick)
+          rm -rf src/main/res/mipmap-anydpi-v26
+          for d in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
+            n=${d%%:*}; s=${d##*:}
+            convert ../../../icon-512.png -resize ${s}x${s} src/main/res/mipmap-$n/ic_launcher.png
+            convert ../../../icon-512.png -resize ${s}x${s} src/main/res/mipmap-$n/ic_launcher_round.png
+          done
+          sed -i "s/versionCode 1$/versionCode ${{ github.run_number }}/; s/versionName \"1.0\"/versionName \"1.${{ github.run_number }}\"/" build.gradle
+          grep -n "versionCode\|versionName" build.gradle
+
+      - name: Compilation signée (release)
+        if: env.SIGNATURE == 'oui'
+        env:
+          KS: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          PW: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          cd build/android
+          echo "$KS" | base64 -d > $RUNNER_TEMP/mtg.jks
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon \
+            -Pandroid.injected.signing.store.file=$RUNNER_TEMP/mtg.jks \
+            -Pandroid.injected.signing.store.password="$PW" \
+            -Pandroid.injected.signing.key.alias=mtg \
+            -Pandroid.injected.signing.key.password="$PW"
+          mkdir -p ../../sortie && cp app/build/outputs/apk/release/app-release.apk ../../sortie/MTG-Vehicule.apk
+
+      - name: Compilation de secours (debug, si les secrets manquent)
+        if: env.SIGNATURE != 'oui'
+        run: |
+          cd build/android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+          mkdir -p ../../sortie && cp app/build/outputs/apk/debug/app-debug.apk ../../sortie/MTG-Vehicule.apk
+          echo "::warning::Secrets de signature absents : APK debug produit (les mises à jour devront désinstaller l'ancienne version)."
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MTG-Vehicule-apk
+          path: sortie/MTG-Vehicule.apk
+          retention-days: 90
