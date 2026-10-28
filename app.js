@@ -158,10 +158,7 @@ function texteMail() {
     + `\n\n---\nFichier joint à importer dans MTG (Soumissions). Réf. ${f.id}`;
 }
 
-async function envoyer() {
-  const m = manquants();
-  if (m.length) return alert('Il reste ' + m.length + ' point(s) à compléter.');
-  if (!cfg.destinataire) return alert('Saisissez l’adresse de réception dans les paramètres ⚙.');
+function preparer() {
   const payload = { format: 'mtg-soumission', version: VERSION_FORMAT, type: 'ETAT_VEHICULE', id: f.id,
     creeLe: f.cree, envoyeLe: new Date().toISOString(),
     donnees: { immatriculation: f.immat, kilometrage: f.km ? +f.km : null, carburant: f.carburant,
@@ -169,22 +166,53 @@ async function envoyer() {
       points: Object.entries(f.reponses).map(([cle, r]) => ({ cle, section: r.section, libelle: r.libelle,
         etat: r.etat, note: r.note || '', photos: r.photos || [] })) } };
   const nom = `etat-vehicule_${f.immat.replace(/[^A-Z0-9]/g, '')}_${f.date}.json`;
-  const fichier = new File([JSON.stringify(payload)], nom, { type: 'application/json' });
   const objet = `[MTG] État véhicule ${f.immat} – ${f.date}${defauts().length ? ' – ' + defauts().length + ' défaut(s)' : ''}`;
-  const corps = texteMail();
-  try {
-    if (navigator.canShare && navigator.canShare({ files: [fichier] })) {
-      await navigator.clipboard?.writeText(cfg.destinataire).catch(() => {});
-      alert(`Choisissez votre messagerie.\nDestinataire : ${cfg.destinataire}\n(adresse copiée, à coller si elle n’apparaît pas)`);
-      await navigator.share({ files: [fichier], title: objet, text: corps });
-    } else {
-      const a = document.createElement('a'); a.href = URL.createObjectURL(fichier); a.download = nom; a.click();
-      alert('Le fichier a été téléchargé. Joignez-le au mail qui va s’ouvrir.');
-      location.href = `mailto:${encodeURIComponent(cfg.destinataire)}?subject=${encodeURIComponent(objet)}&body=${encodeURIComponent(corps)}`;
-    }
+  return { nom, objet, corps: texteMail(), fichier: new File([JSON.stringify(payload)], nom, { type: 'application/json' }) };
+}
+
+function envoyer() {
+  const m = manquants();
+  if (m.length) return alert('Il reste ' + m.length + ' point(s) à compléter.');
+  if (!cfg.destinataire) return alert('Saisissez l’adresse de réception dans les paramètres ⚙.');
+  ecranEnvoi();
+}
+
+function ecranEnvoi() {
+  const p = preparer();
+  const partage = !!(navigator.canShare && navigator.canShare({ files: [p.fichier] }));
+  document.getElementById('titre').textContent = 'Envoi';
+  pied.classList.add('cache'); setProg(nbEtapes - 1);
+  vue.innerHTML = `<div class="carte"><h2>Envoyer la check-list</h2>
+    <p class="sous">Destinataire : <b>${esc(cfg.destinataire)}</b></p>
+    ${partage ? `
+      <p><b>1.</b> Appuyez ci-dessous puis choisissez votre messagerie (Gmail, Outlook…).</p>
+      <button class="btn vert" id="b_share">📤 Partager par mail</button>
+      <p class="sous" style="margin-top:8px">Si le champ « À » est vide, appuyez longuement dedans et collez : l’adresse a été copiée.</p>`
+    : `
+      <div class="info">Votre navigateur ne joint pas les fichiers automatiquement. Pour un envoi en un geste, ouvrez l’app dans <b>Google Chrome</b>.</div>
+      <p><b>1.</b> Enregistrez le fichier sur le téléphone :</p>
+      <button class="btn" id="b_dl">💾 Enregistrer le fichier</button>
+      <p><b>2.</b> Ouvrez le mail (destinataire et texte déjà remplis), puis ajoutez la pièce jointe avec le trombone 📎 (dossier <i>Téléchargements</i>, fichier <i>${esc(p.nom)}</i>) :</p>
+      <button class="btn vert" id="b_mail">✉️ Ouvrir le mail</button>`}
+    <p style="margin-top:22px"><b>${partage ? '2' : '3'}.</b> Une fois le mail <u>réellement envoyé</u> :</p>
+    <button class="btn sec" id="b_fini">✅ C’est envoyé, terminer</button>
+    <button class="btn sec" id="b_retour">← Revenir à la check-list</button></div>`;
+  const q = id => document.getElementById(id);
+  if (partage) q('b_share').onclick = async () => {
+    try { await navigator.clipboard?.writeText(cfg.destinataire); } catch {}
+    try { await navigator.share({ files: [p.fichier], title: p.objet, text: p.corps }); }
+    catch (e) { if (e.name !== 'AbortError') alert('Partage impossible : ' + e.message); }
+  };
+  else {
+    q('b_dl').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(p.fichier); a.download = p.nom; document.body.appendChild(a); a.click(); a.remove(); };
+    q('b_mail').onclick = () => { location.href = `mailto:${cfg.destinataire}?subject=${encodeURIComponent(p.objet)}&body=${encodeURIComponent(p.corps)}`; };
+  }
+  q('b_retour').onclick = () => afficher();
+  q('b_fini').onclick = () => {
+    if (!confirm('Confirmer : le mail est parti ? La check-list sera effacée du téléphone.')) return;
     const hist = lire('mtg_historique', []); hist.unshift({ id: f.id, immat: f.immat, date: f.date }); ecrire('mtg_historique', hist.slice(0, 30));
-    if (confirm('Le mail est-il bien parti ? (OK = effacer la check-list)')) { f = null; localStorage.removeItem('mtg_brouillon'); etape = 0; ecrire('mtg_etape', 0); accueil(); }
-  } catch (e) { if (e.name !== 'AbortError') alert('Envoi impossible : ' + e.message); }
+    f = null; localStorage.removeItem('mtg_brouillon'); etape = 0; ecrire('mtg_etape', 0); accueil();
+  };
 }
 
 // ---------- paramètres ----------
