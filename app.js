@@ -183,9 +183,9 @@ function preparer() {
       date: f.date, agent: f.agent, commentaire: f.commentaire,
       points: Object.entries(f.reponses).map(([cle, r]) => ({ cle, section: r.section, libelle: r.libelle,
         etat: r.etat, note: r.note || '', photos: r.photos || [] })) } };
-  const nom = `etat-vehicule_${f.immat.replace(/[^A-Z0-9]/g, '')}_${f.date}.json`;
+  const nom = `etat-vehicule_${f.immat.replace(/[^A-Z0-9]/g, '')}_${f.date}.txt`;
   const objet = `[MTG] État véhicule ${f.immat} – ${f.date}${defauts().length ? ' – ' + defauts().length + ' défaut(s)' : ''}`;
-  return { nom, objet, corps: texteMail(), fichier: new File([JSON.stringify(payload)], nom, { type: 'application/json' }) };
+  return { nom, objet, corps: texteMail(), fichier: new File([JSON.stringify(payload)], nom, { type: 'text/plain' }) };
 }
 
 function envoyer() {
@@ -205,7 +205,7 @@ function ecranEnvoi() {
     ${partage ? `
       <p><b>1.</b> Appuyez ci-dessous puis choisissez votre messagerie (Gmail, Outlook…).</p>
       <button class="btn vert" id="b_share">📤 Partager par mail</button>
-      <p class="sous" style="margin-top:8px">Si le champ « À » est vide, appuyez longuement dedans et collez : l’adresse a été copiée.</p>`
+      <p class="sous" style="margin-top:8px">Le champ « À » n’est pas rempli automatiquement : saisissez <b>${esc(cfg.destinataire)}</b>.</p>`
     : `
       <div class="info">Votre navigateur ne joint pas les fichiers automatiquement. Pour un envoi en un geste, ouvrez l’app dans <b>Google Chrome</b>.</div>
       <p><b>1.</b> Enregistrez le fichier sur le téléphone :</p>
@@ -217,7 +217,6 @@ function ecranEnvoi() {
     <button class="btn sec" id="b_retour">← Revenir à la check-list</button></div>`;
   const q = id => document.getElementById(id);
   if (partage) q('b_share').onclick = async () => {
-    try { await navigator.clipboard?.writeText(cfg.destinataire); } catch {}
     try { await navigator.share({ files: [p.fichier], title: p.objet, text: p.corps }); }
     catch (e) { if (e.name !== 'AbortError') alert('Partage impossible : ' + e.message); }
   };
