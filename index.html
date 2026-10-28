@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b4f8a">
+<title>MTG – État véhicule</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+:root{--bleu:#0b4f8a;--vert:#1f9d55;--rouge:#d64545;--gris:#6b7280;--fond:#f3f5f8;--carte:#fff;--txt:#1f2937}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;font-family:system-ui,Roboto,sans-serif;background:var(--fond);color:var(--txt);font-size:17px}
+header{background:var(--bleu);color:#fff;padding:14px 16px;position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px}
+header h1{font-size:19px;margin:0;flex:1}
+header button{background:none;border:0;color:#fff;font-size:24px;padding:4px 8px}
+.bar{height:5px;background:#dbe3ec}.bar div{height:100%;background:var(--vert);width:0;transition:width .3s}
+main{padding:16px;max-width:640px;margin:auto;padding-bottom:110px}
+.carte{background:var(--carte);border-radius:14px;padding:16px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+h2{font-size:20px;margin:0 0 4px}.sous{color:var(--gris);font-size:15px;margin:0 0 14px}
+label{display:block;font-weight:600;margin:12px 0 6px}
+input,select,textarea{width:100%;font-size:17px;padding:13px;border:1.5px solid #cbd5e1;border-radius:10px;background:#fff;color:var(--txt)}
+textarea{min-height:80px}
+.item{border-top:1px solid #eef1f5;padding:12px 0}.item:first-of-type{border-top:0}
+.item .nom{font-weight:600;margin-bottom:8px}
+.choix{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.choix button{padding:13px 4px;border-radius:10px;border:1.5px solid #cbd5e1;background:#fff;font-size:16px;font-weight:600;color:var(--gris)}
+.choix .ok.on{background:var(--vert);border-color:var(--vert);color:#fff}
+.choix .def.on{background:var(--rouge);border-color:var(--rouge);color:#fff}
+.choix .na.on{background:var(--gris);border-color:var(--gris);color:#fff}
+.defaut{margin-top:10px;display:none}.defaut.on{display:block}
+.photos{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.photos img{width:72px;height:72px;object-fit:cover;border-radius:8px}
+.btn{display:block;width:100%;padding:16px;border:0;border-radius:12px;font-size:18px;font-weight:700;background:var(--bleu);color:#fff;margin-top:10px}
+.btn.sec{background:#e2e8f0;color:var(--txt)}.btn.vert{background:var(--vert)}
+.pied{position:fixed;bottom:0;left:0;right:0;background:#fff;padding:12px 16px calc(12px + env(safe-area-inset-bottom));box-shadow:0 -2px 8px rgba(0,0,0,.1);display:flex;gap:10px}
+.pied .btn{margin:0}
+.tuile{display:flex;align-items:center;gap:14px;padding:18px;font-size:19px;font-weight:700;background:#fff;border-radius:14px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.08);border:0;width:100%;text-align:left;color:var(--txt)}
+.tuile span{font-size:30px}
+.resume li{margin:4px 0}.r{color:var(--rouge);font-weight:600}
+.info{background:#e8f1fb;border-radius:10px;padding:12px;font-size:15px}
+.cache{display:none}
+</style>
+</head>
+<body>
+<header><button id="retour" class="cache" aria-label="Retour">←</button><h1 id="titre">État véhicule</h1><button id="reglages" aria-label="Paramètres">⚙</button></header>
+<div class="bar"><div id="prog"></div></div>
+<main id="vue"></main>
+<div class="pied cache" id="pied"><button class="btn sec" id="prec">Précédent</button><button class="btn" id="suiv">Suivant</button></div>
+<script src="app.js"></script>
+</body>
+</html>
