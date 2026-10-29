@@ -3,6 +3,7 @@
 const NATIF = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 // MTG – Check-list état véhicule (PWA hors ligne). Aucune donnée ni adresse dans ce code.
 const VERSION_FORMAT = 1;
+const VERSION_APP = 7;
 
 const SECTIONS = [
   { id: 'ext', titre: 'Extérieur', items: [
@@ -63,10 +64,10 @@ function accueil() {
   pied.classList.add('cache'); setProg(0);
   const brouillon = f && (f.immat || Object.keys(f.reponses).length);
   vue.innerHTML = `
-    ${!cfg.destinataire ? `<div class="carte info">Avant la première utilisation, ouvrez les <b>paramètres ⚙</b> pour saisir l’adresse mail de réception.</div>` : ''}
+    ${!cfg.destinataire ? `<div class="carte info">Avant la première utilisation, ouvrez les <b>paramètres ⚙</b> pour saisir l’adresse mail de réception. Mode d’emploi : bouton <b>?</b>.</div>` : ''}
     <button class="tuile" id="go"><span>🚗</span>${brouillon ? 'Reprendre la check-list en cours' : 'Nouvelle check-list véhicule'}</button>
     ${brouillon ? `<button class="tuile" id="neuf"><span>➕</span>Recommencer à zéro</button>` : ''}
-    <p class="sous" style="text-align:center">Fonctionne sans réseau. L’envoi se fait par mail.<br>Version 6${NATIF ? ' · app Android' : ''}</p>`;
+    <p class="sous" style="text-align:center">Fonctionne sans réseau. L’envoi se fait par mail.<br>Version ${VERSION_APP}${NATIF ? ' · app Android' : ''}</p>`;
   document.getElementById('go').onclick = () => { if (!f) nouveau(); afficher(); };
   const n = document.getElementById('neuf');
   if (n) n.onclick = () => { if (confirm('Effacer la check-list en cours ?')) { nouveau(); afficher(); } };
@@ -247,6 +248,37 @@ function ecranEnvoi() {
   };
 }
 
+// ---------- aide ----------
+function aide() {
+  document.getElementById('titre').textContent = 'Aide';
+  document.getElementById('retour').classList.remove('cache'); pied.classList.add('cache'); setProg(0);
+  vue.innerHTML = `<div class="carte aide"><h2>Mode d’emploi</h2>
+    <p class="sous">L’app fonctionne sans réseau. Seul l’envoi du mail a besoin de la 4G ou du Wi-Fi.</p>
+    <h3>Première utilisation</h3>
+    <ol><li>Touchez <b>⚙</b> en haut à droite.</li>
+      <li>Saisissez l’<b>adresse mail de réception</b> (fournie par le service MTG) et <b>votre nom</b>.</li>
+      <li>Touchez <b>Enregistrer</b>. Ces réglages restent sur le téléphone.</li></ol>
+    <h3>Faire une check-list</h3>
+    <ol><li><b>Nouvelle check-list véhicule</b>, puis touchez la tuile de votre véhicule.</li>
+      <li>Saisissez le <b>kilométrage</b> (le dernier connu est rappelé) et le niveau de carburant.</li>
+      <li>Pour chaque point : <b>OK</b>, <b>Défaut</b> ou <b>N/A</b> (non applicable). « Tout est OK » remplit la page d’un coup.</li>
+      <li>En cas de <b>défaut</b> : décrivez-le et ajoutez une <b>photo</b> 📷. Touchez une photo pour la supprimer.</li>
+      <li>Au <b>récapitulatif</b>, vérifiez les défauts et ajoutez un commentaire si besoin.</li></ol>
+    <p>La saisie est enregistrée en continu : vous pouvez fermer l’app et reprendre plus tard.</p>
+    <h3>Envoyer</h3>
+    <ol><li>Touchez <b>Envoyer par mail</b>, puis <b>📤 Partager par mail</b> et choisissez votre messagerie.</li>
+      <li>Le champ <b>« À »</b> n’est pas toujours rempli : saisissez l’adresse affichée à l’écran.</li>
+      <li>Vérifiez que le fichier <b>etat-vehicule_….txt</b> est bien joint, puis envoyez.</li>
+      <li>Revenez dans l’app et touchez <b>✅ C’est envoyé, terminer</b>. Pas avant : la check-list serait effacée.</li></ol>
+    <p>Si le partage est refusé, l’app propose l’envoi en 2 gestes : <b>Enregistrer le fichier</b>, puis <b>Ouvrir le mail</b> et joindre le fichier avec le trombone 📎 (dossier Téléchargements).</p>
+    <h3>En cas de problème</h3>
+    <ul><li><b>Pas de réseau</b> : finissez la check-list, envoyez plus tard. Rien n’est perdu.</li>
+      <li><b>Véhicule absent de la liste</b> : prévenez le service MTG.</li>
+      <li><b>Mail parti deux fois</b> : sans gravité, le doublon est écarté à l’import.</li>
+      <li><b>Erreur de saisie après envoi</b> : refaites une check-list et signalez-le au service MTG.</li></ul>
+    <p class="sous" style="margin-top:16px">Version ${VERSION_APP}${NATIF ? ' · app Android' : ''}</p></div>`;
+}
+
 // ---------- paramètres ----------
 function parametres() {
   document.getElementById('titre').textContent = 'Paramètres';
@@ -262,6 +294,7 @@ function parametres() {
 }
 
 document.getElementById('reglages').onclick = parametres;
+document.getElementById('aide').onclick = aide;
 document.getElementById('retour').onclick = accueil;
 document.getElementById('prec').onclick = () => { if (etape > 0) { etape--; sauver(); afficher(); } };
 document.getElementById('suiv').onclick = () => { if (etape < nbEtapes - 1) { etape++; sauver(); afficher(); } else envoyer(); };
