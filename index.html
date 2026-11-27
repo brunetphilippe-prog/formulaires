@@ -20,7 +20,7 @@ main{padding:16px;max-width:640px;margin:auto;padding-bottom:110px}
 .carte{background:var(--carte);border-radius:14px;padding:16px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
 h2{font-size:20px;margin:0 0 4px}.sous{color:var(--gris);font-size:15px;margin:0 0 14px}
 label{display:block;font-weight:600;margin:12px 0 6px}
-input,select,textarea{width:100%;font-size:17px;padding:13px;border:1.5px solid #cbd5e1;border-radius:10px;background:#fff;color:var(--txt)}
+input,select,textarea{width:100%;font-family:inherit;font-size:17px;padding:13px;border:1.5px solid #cbd5e1;border-radius:10px;background:#fff;color:var(--txt)}
 textarea{min-height:80px}
 .item{border-top:1px solid #eef1f5;padding:12px 0}.item:first-of-type{border-top:0}
 .item .nom{font-weight:600;margin-bottom:8px}
@@ -43,10 +43,19 @@ textarea{min-height:80px}
 .cache{display:none}
 .aide h3{margin:18px 0 6px;font-size:17px;color:var(--bleu)}.aide p,.aide li{font-size:15px;line-height:1.45}.aide ol,.aide ul{padding-left:20px;margin:6px 0}
 .flotte{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.veh{text-align:left;padding:12px;border-radius:12px;border:1.5px solid #cbd5e1;background:#fff;color:var(--txt);font-size:17px}
-.veh b{display:block;font-size:18px;letter-spacing:.5px}.veh span{font-size:13px;color:var(--gris)}
+.veh{position:relative;padding:14px 6px;border-radius:10px;border:2px solid #9aa7b6;background:#fff;color:var(--txt);font-size:19px;font-weight:800;letter-spacing:1px;font-family:ui-monospace,'Roboto Mono',monospace;text-align:center}
+.veh i{position:absolute;top:3px;right:5px;font-style:normal;font-size:11px;font-weight:700;letter-spacing:0;color:#fff;background:var(--rouge);border-radius:5px;padding:1px 4px;font-family:system-ui,sans-serif}
 .veh.on{border-color:var(--bleu);background:#e8f1fb;box-shadow:0 0 0 2px var(--bleu) inset}
-.veh.hs{opacity:.55}
+.veh.hs{opacity:.6}
+.carbu{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.carbu button{padding:14px 2px;border-radius:10px;border:1.5px solid #cbd5e1;background:#fff;font-size:15px;font-weight:700;color:var(--gris)}
+.carbu button.on{background:var(--bleu);border-color:var(--bleu);color:#fff}
+.champ{border-radius:10px;transition:background .2s}
+.champ.manque{background:#fdecec;box-shadow:0 0 0 2px var(--rouge);padding-left:8px;padding-right:8px}
+.champ.manque label:not(.photo),.champ.manque .nom{color:var(--rouge)}
+.champ.manque input,.champ.manque textarea{border-color:var(--rouge)}
+.alerte{background:#fdecec;color:var(--rouge);font-weight:700;border-radius:10px;padding:10px 12px;margin:6px 0 8px;font-size:15px}
+.btn.attente{opacity:.45}
 </style>
 </head>
 <body>
