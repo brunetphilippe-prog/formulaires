@@ -2,8 +2,10 @@
 // NATIF = app Android installée (APK Capacitor) ; sinon navigateur / PWA.
 const NATIF = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 // MTG – Check-list état véhicule (PWA hors ligne). Aucune donnée ni adresse dans ce code.
+// Version 8 : envoi par Element (messagerie Matrix) par défaut ; le mail reste disponible en secours.
+// Le fichier envoyé est inchangé (même nom, même format) : l'import dans MTG ne change pas.
 const VERSION_FORMAT = 1;
-const VERSION_APP = 7;
+const VERSION_APP = 8;
 
 const SECTIONS = [
   { id: 'ext', titre: 'Extérieur', items: [
@@ -37,7 +39,12 @@ const vehicule = immat => FLOTTE.find(v => v.immat === immat);
 // ---------- stockage local ----------
 const lire = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
 const ecrire = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { alert('Mémoire pleine : retirez des photos.'); } };
-let cfg = lire('mtg_cfg', { destinataire: '', agent: '', vehicules: '' });
+// mode : 'element' (par défaut) ou 'mail'. salon : nom ou adresse du salon Element de réception.
+let cfg = Object.assign({ mode: 'element', salon: '', destinataire: '', agent: '', vehicules: '' }, lire('mtg_cfg', {}));
+const viaElement = () => cfg.mode !== 'mail';
+// Adresse de salon Matrix (#nom:serveur ou !id:serveur) : permet d'ouvrir le salon directement.
+const adresseSalon = () => /^[#!][^\s:]+:[^\s]+$/.test(cfg.salon) ? cfg.salon : '';
+const nomSalon = () => cfg.salon || 'le salon MTG de réception';
 let f = lire('mtg_brouillon', null);
 let etape = lire('mtg_etape', 0);
 
@@ -64,10 +71,11 @@ function accueil() {
   pied.classList.add('cache'); setProg(0);
   const brouillon = f && (f.immat || Object.keys(f.reponses).length);
   vue.innerHTML = `
-    ${!cfg.destinataire ? `<div class="carte info">Avant la première utilisation, ouvrez les <b>paramètres ⚙</b> pour saisir l’adresse mail de réception. Mode d’emploi : bouton <b>?</b>.</div>` : ''}
+    ${viaElement() && !cfg.salon ? `<div class="carte info">Avant la première utilisation, ouvrez les <b>paramètres ⚙</b> pour saisir le <b>salon Element</b> de réception et votre nom. Mode d’emploi : bouton <b>?</b>.</div>` : ''}
+    ${!viaElement() && !cfg.destinataire ? `<div class="carte info">Avant la première utilisation, ouvrez les <b>paramètres ⚙</b> pour saisir l’adresse mail de réception. Mode d’emploi : bouton <b>?</b>.</div>` : ''}
     <button class="tuile" id="go"><span>🚗</span>${brouillon ? 'Reprendre la check-list en cours' : 'Nouvelle check-list véhicule'}</button>
     ${brouillon ? `<button class="tuile" id="neuf"><span>➕</span>Recommencer à zéro</button>` : ''}
-    <p class="sous" style="text-align:center">Fonctionne sans réseau. L’envoi se fait par mail.<br>Version ${VERSION_APP}${NATIF ? ' · app Android' : ''}</p>`;
+    <p class="sous" style="text-align:center">Fonctionne sans réseau. L’envoi se fait ${viaElement() ? 'par <b>Element</b>' : 'par mail'}.<br>Version ${VERSION_APP}${NATIF ? ' · app Android' : ''}</p>`;
   document.getElementById('go').onclick = () => { if (!f) nouveau(); afficher(); };
   const n = document.getElementById('neuf');
   if (n) n.onclick = () => { if (confirm('Effacer la check-list en cours ?')) { nouveau(); afficher(); } };
@@ -81,7 +89,7 @@ function afficher() {
   pied.classList.remove('cache'); setProg(etape);
   document.getElementById('prec').style.visibility = etape === 0 ? 'hidden' : 'visible';
   const suiv = document.getElementById('suiv');
-  suiv.textContent = etape === nbEtapes - 1 ? 'Envoyer par mail' : 'Suivant';
+  suiv.textContent = etape === nbEtapes - 1 ? (viaElement() ? 'Envoyer par Element' : 'Envoyer par mail') : 'Suivant';
   suiv.className = 'btn' + (etape === nbEtapes - 1 ? ' vert' : '');
   if (etape === 0) return ecranIdent();
   if (etape === nbEtapes - 1) return ecranRecap();
@@ -189,47 +197,72 @@ function preparer() {
   const nom = `etat-vehicule_${f.immat.replace(/[^A-Z0-9]/g, '')}_${f.date}.txt`;
   const objet = `[MTG] État véhicule ${f.immat} – ${f.date}${defauts().length ? ' – ' + defauts().length + ' défaut(s)' : ''}`;
   const json = JSON.stringify(payload);
-  return { nom, objet, json, corps: texteMail(), fichier: new File([json], nom, { type: 'text/plain' }) };
+  return { nom, objet, json, corps: texteMail(), fichier: new File([json], nom, { type: 'text/plain' }),
+    taille: Math.ceil(json.length / 1024) };
 }
 
 function envoyer() {
   const m = manquants();
   if (m.length) return alert('Il reste ' + m.length + ' point(s) à compléter.');
-  if (!cfg.destinataire) return alert('Saisissez l’adresse de réception dans les paramètres ⚙.');
+  if (!viaElement() && !cfg.destinataire) return alert('Saisissez l’adresse de réception dans les paramètres ⚙.');
   ecranEnvoi();
 }
 
 let partageOK = true;
 function ecranEnvoi() {
   const p = preparer();
+  const el = viaElement();
   const partage = NATIF || partageOK && !!(navigator.canShare && navigator.canShare({ files: [p.fichier] }));
+  const salon = adresseSalon();
   document.getElementById('titre').textContent = 'Envoi';
   pied.classList.add('cache'); setProg(nbEtapes - 1);
-  vue.innerHTML = `<div class="carte"><h2>Envoyer la check-list</h2>
-    <p class="sous">Destinataire : <b>${esc(cfg.destinataire)}</b></p>
-    ${partage ? `
+
+  // Envoi par Element : le fichier est partagé vers l'app Element, l'agent choisit le salon de réception.
+  // On ne transmet QUE le fichier (pas de texte) : sinon certaines versions d'Element envoient le texte seul.
+  const blocElement = partage ? `
+      <p><b>1.</b> Appuyez ci-dessous, choisissez <b>Element</b>, puis le salon <b>${esc(nomSalon())}</b>, et envoyez.</p>
+      <button class="btn vert" id="b_share">📤 Envoyer avec Element</button>
+      <p class="sous" style="margin-top:8px">Element doit être installé et connecté sur ce téléphone. Fichier : ${esc(p.nom)} (${p.taille} Ko).</p>`
+    : `
+      <div class="info">Votre navigateur ne transmet pas les fichiers directement. Pour un envoi en un geste, utilisez l’app Android ou <b>Google Chrome</b>.</div>
+      <p><b>1.</b> Enregistrez le fichier sur le téléphone :</p>
+      <button class="btn" id="b_dl">💾 Enregistrer le fichier</button>
+      <p><b>2.</b> Ouvrez Element${salon ? '' : `, allez dans le salon <b>${esc(nomSalon())}</b>`}, puis joignez le fichier avec le trombone 📎 (dossier <i>Téléchargements</i>, fichier <i>${esc(p.nom)}</i>) :</p>
+      ${salon ? `<button class="btn vert" id="b_salon">💬 Ouvrir le salon dans Element</button>` : ''}`;
+
+  const blocMail = partage ? `
+      <p class="sous">Destinataire : <b>${esc(cfg.destinataire)}</b></p>
       <p><b>1.</b> Appuyez ci-dessous puis choisissez votre messagerie (Gmail, Outlook…).</p>
       <button class="btn vert" id="b_share">📤 Partager par mail</button>
       <p class="sous" style="margin-top:8px">Le champ « À » n’est pas rempli automatiquement : saisissez <b>${esc(cfg.destinataire)}</b>.</p>`
     : `
+      <p class="sous">Destinataire : <b>${esc(cfg.destinataire)}</b></p>
       <div class="info">Votre navigateur ne joint pas les fichiers automatiquement. Pour un envoi en un geste, ouvrez l’app dans <b>Google Chrome</b>.</div>
       <p><b>1.</b> Enregistrez le fichier sur le téléphone :</p>
       <button class="btn" id="b_dl">💾 Enregistrer le fichier</button>
       <p><b>2.</b> Ouvrez le mail (destinataire et texte déjà remplis), puis ajoutez la pièce jointe avec le trombone 📎 (dossier <i>Téléchargements</i>, fichier <i>${esc(p.nom)}</i>) :</p>
-      <button class="btn vert" id="b_mail">✉️ Ouvrir le mail</button>`}
-    <p style="margin-top:22px"><b>${partage ? '2' : '3'}.</b> Une fois le mail <u>réellement envoyé</u> :</p>
+      <button class="btn vert" id="b_mail">✉️ Ouvrir le mail</button>`;
+
+  vue.innerHTML = `<div class="carte"><h2>${el ? 'Envoyer par Element' : 'Envoyer la check-list'}</h2>
+    ${el ? blocElement : blocMail}
+    <p style="margin-top:22px"><b>${partage ? '2' : '3'}.</b> Une fois le ${el ? 'fichier <u>visible dans le salon</u>' : 'mail <u>réellement envoyé</u>'} :</p>
     <button class="btn sec" id="b_fini">✅ C’est envoyé, terminer</button>
-    <button class="btn sec" id="b_retour">← Revenir à la check-list</button></div>`;
+    <button class="btn sec" id="b_retour">← Revenir à la check-list</button>
+    <button class="btn sec" id="b_autre" style="font-size:15px;font-weight:600">${el ? 'Element indisponible ? Envoyer par mail' : 'Envoyer plutôt par Element'}</button></div>`;
+
   const q = id => document.getElementById(id);
   const telecharger = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(p.fichier); a.download = p.nom; document.body.appendChild(a); a.click(); a.remove(); };
   const ouvrirMail = () => { location.href = `mailto:${cfg.destinataire}?subject=${encodeURIComponent(p.objet)}&body=${encodeURIComponent(p.corps)}`; };
-  const secours = () => { partageOK = false; ecranEnvoi(true); };
+  // Dans l'app Android, une adresse externe est confiée à Android, qui ouvre Element s'il gère les liens matrix.to.
+  const ouvrirSalon = () => { location.href = 'https://matrix.to/#/' + salon; };
+  const secours = () => { partageOK = false; ecranEnvoi(); };
   if (partage) q('b_share').onclick = async () => {
     try {
       if (NATIF) {
         const { Filesystem, Share } = window.Capacitor.Plugins;
         const r = await Filesystem.writeFile({ path: p.nom, data: p.json, directory: 'CACHE', encoding: 'utf8' });
-        await Share.share({ title: p.objet, text: p.corps, files: [r.uri], dialogTitle: 'Envoyer par mail' });
+        if (el) await Share.share({ files: [r.uri], dialogTitle: 'Envoyer avec Element' });
+        else await Share.share({ title: p.objet, text: p.corps, files: [r.uri], dialogTitle: 'Envoyer par mail' });
       } else await navigator.share({ files: [p.fichier] });
     }
     catch (e) {
@@ -239,11 +272,24 @@ function ecranEnvoi() {
       secours();
     }
   };
-  else { q('b_dl').onclick = telecharger; q('b_mail').onclick = ouvrirMail; }
+  else {
+    q('b_dl').onclick = telecharger;
+    if (q('b_mail')) q('b_mail').onclick = ouvrirMail;
+    if (q('b_salon')) q('b_salon').onclick = ouvrirSalon;
+  }
   q('b_retour').onclick = () => afficher();
+  q('b_autre').onclick = () => {
+    if (el && !cfg.destinataire) {
+      const a = prompt('Adresse mail de réception :', '');
+      if (!a || !a.trim()) return;
+      cfg.destinataire = a.trim();
+    }
+    cfg.mode = el ? 'mail' : 'element'; ecrire('mtg_cfg', cfg); ecranEnvoi();
+  };
   q('b_fini').onclick = () => {
-    if (!confirm('Confirmer : le mail est parti ? La check-list sera effacée du téléphone.')) return;
-    const hist = lire('mtg_historique', []); hist.unshift({ id: f.id, immat: f.immat, date: f.date }); ecrire('mtg_historique', hist.slice(0, 30));
+    if (!confirm(el ? 'Confirmer : le fichier apparaît dans le salon Element ? La check-list sera effacée du téléphone.'
+                    : 'Confirmer : le mail est parti ? La check-list sera effacée du téléphone.')) return;
+    const hist = lire('mtg_historique', []); hist.unshift({ id: f.id, immat: f.immat, date: f.date, via: el ? 'element' : 'mail' }); ecrire('mtg_historique', hist.slice(0, 30));
     f = null; localStorage.removeItem('mtg_brouillon'); etape = 0; ecrire('mtg_etape', 0); accueil();
   };
 }
@@ -253,11 +299,11 @@ function aide() {
   document.getElementById('titre').textContent = 'Aide';
   document.getElementById('retour').classList.remove('cache'); pied.classList.add('cache'); setProg(0);
   vue.innerHTML = `<div class="carte aide"><h2>Mode d’emploi</h2>
-    <p class="sous">L’app fonctionne sans réseau. Seul l’envoi du mail a besoin de la 4G ou du Wi-Fi.</p>
+    <p class="sous">L’app fonctionne sans réseau. Seul l’envoi a besoin de la 4G ou du Wi-Fi.</p>
     <h3>Première utilisation</h3>
-    <ol><li>Touchez <b>⚙</b> en haut à droite.</li>
-      <li>Saisissez l’<b>adresse mail de réception</b> (fournie par le service MTG) et <b>votre nom</b>.</li>
-      <li>Touchez <b>Enregistrer</b>. Ces réglages restent sur le téléphone.</li></ol>
+    <ol><li>Installez l’app <b>Element</b> sur le téléphone et connectez-vous avec votre compte (comme sur le PC).</li>
+      <li>Vérifiez que vous êtes bien membre du <b>salon de réception MTG</b> (fourni par le service MTG).</li>
+      <li>Dans cette app, touchez <b>⚙</b> en haut à droite : saisissez le <b>salon Element</b> et <b>votre nom</b>, puis <b>Enregistrer</b>. Ces réglages restent sur le téléphone.</li></ol>
     <h3>Faire une check-list</h3>
     <ol><li><b>Nouvelle check-list véhicule</b>, puis touchez la tuile de votre véhicule.</li>
       <li>Saisissez le <b>kilométrage</b> (le dernier connu est rappelé) et le niveau de carburant.</li>
@@ -265,16 +311,20 @@ function aide() {
       <li>En cas de <b>défaut</b> : décrivez-le et ajoutez une <b>photo</b> 📷. Touchez une photo pour la supprimer.</li>
       <li>Au <b>récapitulatif</b>, vérifiez les défauts et ajoutez un commentaire si besoin.</li></ol>
     <p>La saisie est enregistrée en continu : vous pouvez fermer l’app et reprendre plus tard.</p>
-    <h3>Envoyer</h3>
-    <ol><li>Touchez <b>Envoyer par mail</b>, puis <b>📤 Partager par mail</b> et choisissez votre messagerie.</li>
-      <li>Le champ <b>« À »</b> n’est pas toujours rempli : saisissez l’adresse affichée à l’écran.</li>
-      <li>Vérifiez que le fichier <b>etat-vehicule_….txt</b> est bien joint, puis envoyez.</li>
+    <h3>Envoyer par Element</h3>
+    <ol><li>Touchez <b>Envoyer par Element</b>, puis <b>📤 Envoyer avec Element</b>.</li>
+      <li>Dans la liste qui s’ouvre, choisissez <b>Element</b>, puis le <b>salon de réception MTG</b>, et validez l’envoi.</li>
+      <li>Vérifiez dans Element que le fichier <b>etat-vehicule_….txt</b> apparaît bien dans le salon.</li>
       <li>Revenez dans l’app et touchez <b>✅ C’est envoyé, terminer</b>. Pas avant : la check-list serait effacée.</li></ol>
-    <p>Si le partage est refusé, l’app propose l’envoi en 2 gestes : <b>Enregistrer le fichier</b>, puis <b>Ouvrir le mail</b> et joindre le fichier avec le trombone 📎 (dossier Téléchargements).</p>
+    <p>Si le partage est refusé, l’app propose l’envoi en 2 gestes : <b>Enregistrer le fichier</b>, puis l’ajouter dans le salon Element avec le trombone 📎 (dossier Téléchargements).</p>
+    <h3>Element indisponible ?</h3>
+    <p>Sur l’écran d’envoi, touchez <b>Element indisponible ? Envoyer par mail</b> : l’envoi se fait alors par mail, comme avant (adresse fournie par le service MTG). On peut aussi choisir le mode d’envoi dans les paramètres ⚙.</p>
     <h3>En cas de problème</h3>
     <ul><li><b>Pas de réseau</b> : finissez la check-list, envoyez plus tard. Rien n’est perdu.</li>
+      <li><b>Element n’apparaît pas dans la liste</b> : installez Element, ou envoyez par mail.</li>
+      <li><b>Le salon n’apparaît pas dans Element</b> : demandez au service MTG de vous y inviter.</li>
       <li><b>Véhicule absent de la liste</b> : prévenez le service MTG.</li>
-      <li><b>Mail parti deux fois</b> : sans gravité, le doublon est écarté à l’import.</li>
+      <li><b>Fichier envoyé deux fois</b> : sans gravité, le doublon est écarté à l’import.</li>
       <li><b>Erreur de saisie après envoi</b> : refaites une check-list et signalez-le au service MTG.</li></ul>
     <p class="sous" style="margin-top:16px">Version ${VERSION_APP}${NATIF ? ' · app Android' : ''}</p></div>`;
 }
@@ -284,12 +334,21 @@ function parametres() {
   document.getElementById('titre').textContent = 'Paramètres';
   document.getElementById('retour').classList.remove('cache'); pied.classList.add('cache');
   vue.innerHTML = `<div class="carte"><h2>Paramètres</h2><p class="sous">Enregistrés uniquement sur ce téléphone.</p>
-    <label>Adresse mail de réception</label><input id="p_dest" type="email" value="${esc(cfg.destinataire)}">
+    <label>Mode d’envoi</label>
+    <select id="p_mode"><option value="element" ${viaElement() ? 'selected' : ''}>Element (recommandé)</option>
+      <option value="mail" ${viaElement() ? '' : 'selected'}>Mail</option></select>
+    <label>Salon Element de réception</label>
+    <input id="p_salon" value="${esc(cfg.salon)}" placeholder="ex. #mtg-vehicules:serveur" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <p class="sous" style="margin-top:4px">Nom du salon (affiché comme rappel) ou son adresse <b>#nom:serveur</b> (permet aussi de l’ouvrir d’un geste).</p>
+    <label>Adresse mail de réception <span class="sous">(envoi par mail ou en secours)</span></label>
+    <input id="p_dest" type="email" value="${esc(cfg.destinataire)}">
     <label>Votre nom (pré-rempli)</label><input id="p_agent" value="${esc(cfg.agent)}">
-        <button class="btn" id="p_ok">Enregistrer</button></div>`;
+    <button class="btn" id="p_ok">Enregistrer</button></div>`;
   document.getElementById('p_ok').onclick = () => {
-    cfg = { destinataire: document.getElementById('p_dest').value.trim(), agent: document.getElementById('p_agent').value.trim(),
-            vehicules: '' };
+    const v = id => document.getElementById(id).value.trim();
+    cfg = { mode: v('p_mode') === 'mail' ? 'mail' : 'element', salon: v('p_salon'), destinataire: v('p_dest'),
+            agent: v('p_agent'), vehicules: '' };
+    if (cfg.mode === 'mail' && !cfg.destinataire) return alert('Pour l’envoi par mail, saisissez l’adresse de réception.');
     ecrire('mtg_cfg', cfg); if (f && !f.agent) { f.agent = cfg.agent; sauver(); } accueil(); };
 }
 
