@@ -1,13 +1,19 @@
 # Compile l'application Android "MTG Véhicule" (APK) à partir des fichiers du dépôt.
-# Lancement : onglet Actions > "Application Android" > Run workflow (ou automatiquement à chaque modification de app.js / index.html).
-# Résultat : en bas de la page du run, rubrique "Artifacts" > MTG-Vehicule-apk.
+# Lancement : automatique à chaque modification de app.js / index.html / icônes,
+#             ou onglet Actions > "Application Android" > Run workflow.
+# Résultat : APK signé publié dans "Releases", toujours à la même adresse :
+#   https://github.com/brunetphilippe-prog/formulaires/releases/latest/download/MTG-Vehicule.apk
+# (à ouvrir dans Chrome sur le téléphone). Copie aussi dans le run > Artifacts > MTG-Vehicule-apk.
 name: Application Android
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['app.js', 'index.html', 'icon-512.png', '.github/workflows/android.yml']
+    paths: ['app.js', 'index.html', 'manifest.json', 'icon-192.png', 'icon-512.png', '.github/workflows/android.yml']
+
+permissions:
+  contents: write
 
 jobs:
   apk:
@@ -77,6 +83,19 @@ jobs:
           ./gradlew assembleDebug --no-daemon
           mkdir -p ../../sortie && cp app/build/outputs/apk/debug/app-debug.apk ../../sortie/MTG-Vehicule.apk
           echo "::warning::Secrets de signature absents : APK debug produit (les mises à jour devront désinstaller l'ancienne version)."
+
+      - name: Publication à adresse fixe (Releases)
+        if: env.SIGNATURE == 'oui'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V=$(grep -o "VERSION_APP = [0-9]*" app.js | grep -o "[0-9]*$")
+          gh release create "v1.${{ github.run_number }}" sortie/MTG-Vehicule.apk \
+            --repo "${{ github.repository }}" --target "${{ github.sha }}" --latest \
+            --title "MTG Véhicule – version ${V} (compilation ${{ github.run_number }})" \
+            --notes "APK signé. Sur le téléphone, ouvrir dans Chrome : https://github.com/${{ github.repository }}/releases/latest/download/MTG-Vehicule.apk — l'accueil de l'app doit afficher « Version ${V} »."
+          echo "### APK publié : version ${V}, compilation ${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "https://github.com/${{ github.repository }}/releases/latest/download/MTG-Vehicule.apk" >> $GITHUB_STEP_SUMMARY
 
       - uses: actions/upload-artifact@v4
         with:
