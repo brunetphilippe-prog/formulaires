@@ -6,8 +6,11 @@ const NATIF = !!(window.Capacitor && window.Capacitor.isNativePlatform && window
 // Version 9 : vers Element, le fichier part en .json (même contenu). Element traite tout fichier
 // « text/plain » (.txt) comme un simple message texte et refuse le partage
 // (« Impossible de traiter les données de partage »). Par mail : toujours .txt.
+// Version 10 : saisie téléphone – plaques seules, carburant en boutons, tous les champs
+// obligatoires avant « Suivant » (description exigée pour un défaut), la page ne remonte
+// plus en haut à chaque réponse.
 const VERSION_FORMAT = 1;
-const VERSION_APP = 9;
+const VERSION_APP = 10;
 
 const SECTIONS = [
   { id: 'ext', titre: 'Extérieur', items: [
@@ -85,66 +88,107 @@ function accueil() {
 
 function setProg(i) { document.getElementById('prog').style.width = (100 * i / (nbEtapes - 1)) + '%'; }
 
-function afficher() {
+// Affiche l'étape en cours. garder = true : on reste à la même hauteur dans la page
+// (après un choix OK / Défaut / N/A), sinon on remonte en haut (changement d'étape).
+let signaler = false; // true après un « Suivant » refusé : les manques restent en rouge jusqu'à correction
+function afficher(garder) {
+  const y = window.scrollY;
+  if (!garder) signaler = false;
   document.getElementById('titre').textContent = 'État véhicule';
   document.getElementById('retour').classList.remove('cache');
   pied.classList.remove('cache'); setProg(etape);
   document.getElementById('prec').style.visibility = etape === 0 ? 'hidden' : 'visible';
-  const suiv = document.getElementById('suiv');
-  suiv.textContent = etape === nbEtapes - 1 ? (viaElement() ? 'Envoyer par Element' : 'Envoyer par mail') : 'Suivant';
-  suiv.className = 'btn' + (etape === nbEtapes - 1 ? ' vert' : '');
-  if (etape === 0) return ecranIdent();
-  if (etape === nbEtapes - 1) return ecranRecap();
-  ecranSection(SECTIONS[etape - 1]);
-  window.scrollTo(0, 0);
+  if (etape === 0) ecranIdent();
+  else if (etape === nbEtapes - 1) ecranRecap();
+  else ecranSection(SECTIONS[etape - 1]);
+  majPied();
+  window.scrollTo(0, garder ? y : 0);
 }
+
+// Bouton du bas : « Suivant » (ou « Envoyer ») grisé tant que la page n'est pas complète.
+// Il reste cliquable : un appui montre en rouge ce qui manque.
+function majPied() {
+  const suiv = document.getElementById('suiv');
+  const fin = etape === nbEtapes - 1;
+  const complet = fin ? !manquants().length : !manquantsEtape(etape).length;
+  suiv.textContent = fin ? (viaElement() ? 'Envoyer par Element' : 'Envoyer par mail') : 'Suivant';
+  suiv.className = 'btn' + (fin ? ' vert' : '') + (complet ? '' : ' attente');
+  if (signaler && !fin) marquer(manquantsEtape(etape));
+}
+
+// Surligne en rouge les champs manquants de la page (et retire le rouge des champs corrigés).
+function marquer(m) {
+  vue.querySelectorAll('.champ').forEach(c => c.classList.toggle('manque', m.some(x => x.champ === c.dataset.champ)));
+  document.getElementById('alerte')?.classList.toggle('cache', !m.length);
+}
+
+const CARBURANTS = ['Plein', '3/4', '1/2', '1/4', 'Réserve'];
+const PHOTO_OBLIGATOIRE = false; // true : une photo est exigée pour chaque défaut
 
 function ecranIdent() {
   const v = vehicule(f.immat);
-  vue.innerHTML = `<div class="carte"><h2>Le véhicule</h2><p class="sous">Étape 1 sur ${nbEtapes} · touchez votre véhicule</p>
-    <div class="flotte">${FLOTTE.map(x => `<button class="veh ${x.immat === f.immat ? 'on' : ''} ${x.actif === false ? 'hs' : ''}" data-i="${x.immat}">
-      <b>${x.immat}</b><span>${x.num} · ${x.marque} ${x.modele}${x.actif === false ? ' · hors service' : ''}</span></button>`).join('')}</div>
-    <label>Kilométrage${v ? ` <span class="sous">(dernier connu : ${v.km.toLocaleString('fr-FR')} km)</span>` : ''}</label>
-    <input id="km" type="number" inputmode="numeric" value="${esc(f.km)}">
-    <label>Niveau de carburant / charge</label>
-    <select id="carburant">${['', 'Plein', '3/4', '1/2', '1/4', 'Réserve'].map(o => `<option ${f.carburant === o ? 'selected' : ''}>${o}</option>`).join('')}</select>
-    <label>Date</label><input id="date" type="date" value="${esc(f.date)}">
-    <label>Votre nom</label><input id="agent" value="${esc(f.agent)}"></div>`;
-  vue.querySelectorAll('.veh').forEach(b => b.onclick = () => { f.immat = b.dataset.i; sauver(); ecranIdent(); });
-  ['km', 'carburant', 'date', 'agent'].forEach(k => document.getElementById(k).oninput = e => { f[k] = e.target.value; sauver(); });
+  vue.innerHTML = `<div class="carte"><h2>Le véhicule</h2><p class="sous">Étape 1 sur ${nbEtapes} · tous les champs sont obligatoires</p>
+    <div class="alerte cache" id="alerte">Complétez les champs en rouge pour continuer.</div>
+    <div class="champ" data-champ="immat"><label>Plaque</label>
+      <div class="flotte">${FLOTTE.map(x => `<button class="veh ${x.immat === f.immat ? 'on' : ''} ${x.actif === false ? 'hs' : ''}" data-i="${x.immat}">${x.immat}${x.actif === false ? '<i>HS</i>' : ''}</button>`).join('')}</div>
+      ${v ? `<p class="sous" style="margin:6px 0 0">${v.num} · ${v.marque} ${v.modele}${v.actif === false ? ' · <b class="r">hors service</b>' : ''}</p>` : ''}</div>
+    <div class="champ" data-champ="km"><label>Kilométrage${v ? ` <span class="sous">(dernier : ${v.km.toLocaleString('fr-FR')} km)</span>` : ''}</label>
+      <input id="km" type="number" inputmode="numeric" pattern="[0-9]*" min="0" placeholder="ex. ${v ? v.km : '50000'}" value="${esc(f.km)}" enterkeyhint="done"></div>
+    <div class="champ" data-champ="carburant"><label>Carburant / charge</label>
+      <div class="carbu">${CARBURANTS.map(o => `<button class="${f.carburant === o ? 'on' : ''}" data-c="${o}">${o}</button>`).join('')}</div></div>
+    <div class="champ" data-champ="date"><label>Date</label><input id="date" type="date" value="${esc(f.date)}"></div>
+    <div class="champ" data-champ="agent"><label>Votre nom</label><input id="agent" value="${esc(f.agent)}" autocomplete="name"></div></div>`;
+  vue.querySelectorAll('.veh').forEach(b => b.onclick = () => {
+    f.immat = b.dataset.i; sauver(); ecranIdent(); majPied();
+    const km = document.getElementById('km'); if (!f.km) { km.focus(); km.scrollIntoView({ block: 'center' }); }
+  });
+  vue.querySelectorAll('.carbu button').forEach(b => b.onclick = () => {
+    f.carburant = b.dataset.c; sauver();
+    vue.querySelectorAll('.carbu button').forEach(x => x.classList.toggle('on', x === b));
+    b.closest('.champ').classList.remove('manque'); majPied();
+  });
+  ['km', 'date', 'agent'].forEach(k => document.getElementById(k).oninput = e => {
+    f[k] = k === 'km' ? e.target.value.replace(/[^0-9]/g, '') : e.target.value; sauver();
+    e.target.closest('.champ').classList.remove('manque'); majPied();
+  });
   const km = document.getElementById('km');
-  km.onchange = () => { if (v && f.km && +f.km < v.km) alert(`Attention : ${(+f.km).toLocaleString('fr-FR')} km est inférieur au dernier relevé (${v.km.toLocaleString('fr-FR')} km).`); };
+  km.onchange = () => { if (v && f.km && +f.km < v.km) alert(`Attention : ${(+f.km).toLocaleString('fr-FR')} km est inférieur au dernier relevé (${v.km.toLocaleString('fr-FR')} km). Vérifiez la saisie.`); };
 }
 
 function ecranSection(s) {
-  vue.innerHTML = `<div class="carte"><h2>${s.titre}</h2><p class="sous">Étape ${etape + 1} sur ${nbEtapes}</p>
-    <button class="btn sec" id="toutok" style="margin:0 0 6px">✓ Tout est OK</button>
+  vue.innerHTML = `<div class="carte"><h2>${s.titre}</h2><p class="sous">Étape ${etape + 1} sur ${nbEtapes} · répondez à chaque point</p>
+    <div class="alerte cache" id="alerte">Complétez les points en rouge pour continuer.</div>
+    <button class="btn sec" id="toutok" style="margin:0 0 6px">✓ Tout le reste est OK</button>
     ${s.items.map((it, i) => {
       const k = s.id + i, r = f.reponses[k] || {};
-      return `<div class="item" data-k="${k}"><div class="nom">${esc(it)}</div>
+      return `<div class="item champ" data-k="${k}" data-champ="${k}"><div class="nom">${esc(it)}</div>
         <div class="choix"><button class="ok ${r.etat === 'OK' ? 'on' : ''}" data-v="OK">OK</button>
         <button class="def ${r.etat === 'DEFAUT' ? 'on' : ''}" data-v="DEFAUT">Défaut</button>
         <button class="na ${r.etat === 'NA' ? 'on' : ''}" data-v="NA">N/A</button></div>
         <div class="defaut ${r.etat === 'DEFAUT' ? 'on' : ''}">
-          <textarea placeholder="Décrivez le défaut">${esc(r.note)}</textarea>
-          <label class="btn sec" style="text-align:center;font-weight:700">📷 Ajouter une photo
+          <textarea placeholder="Décrivez le défaut (obligatoire)" enterkeyhint="done">${esc(r.note)}</textarea>
+          <label class="btn sec photo" style="text-align:center;font-weight:700">📷 ${(r.photos || []).length ? 'Ajouter une autre photo' : 'Prendre une photo' + (PHOTO_OBLIGATOIRE ? ' (obligatoire)' : '')}
             <input type="file" accept="image/*" capture="environment" class="cache"></label>
           <div class="photos">${(r.photos || []).map((p, j) => `<img src="${p}" data-j="${j}" alt="photo">`).join('')}</div>
         </div></div>`;
     }).join('')}</div>`;
   document.getElementById('toutok').onclick = () => {
     s.items.forEach((it, i) => { const k = s.id + i; if (!f.reponses[k]?.etat) f.reponses[k] = { libelle: it, section: s.titre, etat: 'OK' }; });
-    sauver(); afficher(); };
+    sauver(); afficher(true); };
   vue.querySelectorAll('.item').forEach(el => {
     const k = el.dataset.k, i = +k.slice(s.id.length);
     const rep = () => (f.reponses[k] ||= { libelle: s.items[i], section: s.titre });
-    el.querySelectorAll('.choix button').forEach(b => b.onclick = () => { rep().etat = b.dataset.v; sauver(); afficher(); });
-    el.querySelector('textarea').oninput = e => { rep().note = e.target.value; sauver(); };
+    el.querySelectorAll('.choix button').forEach(b => b.onclick = () => {
+      rep().etat = b.dataset.v; sauver(); afficher(true);
+      if (b.dataset.v === 'DEFAUT' && !rep().note) vue.querySelector(`.item[data-k="${k}"] textarea`).focus();
+    });
+    el.querySelector('textarea').oninput = e => { rep().note = e.target.value; sauver(); if (e.target.value.trim()) el.classList.remove('manque'); majPied(); };
     el.querySelector('input[type=file]').onchange = async e => {
       const file = e.target.files[0]; if (!file) return;
-      (rep().photos ||= []).push(await compresser(file)); sauver(); afficher(); };
+      const photo = await compresser(file); if (!photo) return;
+      (rep().photos ||= []).push(photo); sauver(); afficher(true); };
     el.querySelectorAll('.photos img').forEach(img => img.onclick = () => {
-      if (confirm('Supprimer cette photo ?')) { rep().photos.splice(+img.dataset.j, 1); sauver(); afficher(); } });
+      if (confirm('Supprimer cette photo ?')) { rep().photos.splice(+img.dataset.j, 1); sauver(); afficher(true); } });
   });
 }
 
@@ -157,22 +201,56 @@ function compresser(file, max = 1280, q = 0.6) {
       c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
       URL.revokeObjectURL(img.src); res(c.toDataURL('image/jpeg', q));
     };
+    img.onerror = () => { URL.revokeObjectURL(img.src); alert('Photo illisible, réessayez.'); res(null); };
     img.src = URL.createObjectURL(file);
   });
 }
 
+// Ce qui manque sur une étape : [{ champ, libelle }]. champ = data-champ à surligner.
+function manquantsEtape(e) {
+  const m = [];
+  if (e === 0) {
+    if (!f.immat) m.push({ champ: 'immat', libelle: 'Plaque du véhicule' });
+    if (!/^\d+$/.test(String(f.km)) || +f.km <= 0) m.push({ champ: 'km', libelle: 'Kilométrage' });
+    if (!f.carburant) m.push({ champ: 'carburant', libelle: 'Carburant / charge' });
+    if (!f.date) m.push({ champ: 'date', libelle: 'Date' });
+    if (!String(f.agent || '').trim()) m.push({ champ: 'agent', libelle: 'Votre nom' });
+  } else if (e <= SECTIONS.length) {
+    const s = SECTIONS[e - 1];
+    s.items.forEach((it, i) => {
+      const k = s.id + i, r = f.reponses[k];
+      if (!r?.etat) m.push({ champ: k, libelle: `${s.titre} : ${it}` });
+      else if (r.etat === 'DEFAUT' && !String(r.note || '').trim()) m.push({ champ: k, libelle: `${s.titre} : ${it} (description du défaut)` });
+      else if (r.etat === 'DEFAUT' && PHOTO_OBLIGATOIRE && !(r.photos || []).length) m.push({ champ: k, libelle: `${s.titre} : ${it} (photo du défaut)` });
+    });
+  }
+  return m;
+}
+
 function manquants() {
   const m = [];
-  if (!f.immat) m.push('Véhicule');
-  if (!f.agent) m.push('Votre nom');
-  SECTIONS.forEach(s => s.items.forEach((it, i) => { if (!f.reponses[s.id + i]?.etat) m.push(`${s.titre} : ${it}`); }));
+  for (let e = 0; e <= SECTIONS.length; e++) m.push(...manquantsEtape(e).map(x => x.libelle));
   return m;
 }
 const defauts = () => Object.values(f.reponses).filter(r => r.etat === 'DEFAUT');
 
+// Appui sur « Suivant » : on avance seulement si l'étape est complète, sinon on montre ce qui manque.
+function suivant() {
+  if (etape === nbEtapes - 1) return envoyer();
+  const m = manquantsEtape(etape);
+  if (m.length) {
+    signaler = true; marquer(m);
+    const premier = vue.querySelector('.champ.manque');
+    if (premier) premier.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (navigator.vibrate) navigator.vibrate(120);
+    return;
+  }
+  etape++; sauver(); afficher();
+}
+
 function ecranRecap() {
   const m = manquants(), d = defauts();
-  vue.innerHTML = `<div class="carte"><h2>Récapitulatif</h2><p class="sous">${esc(f.immat)} · ${esc(f.km)} km · ${esc(f.date)}</p>
+  vue.innerHTML = `<div class="carte"><h2>Récapitulatif</h2><p class="sous">${esc(f.immat)} · ${f.km ? (+f.km).toLocaleString('fr-FR') : '?'} km · ${esc(f.carburant || '?')} · ${esc(f.date)}</p>
     ${m.length ? `<div class="info"><b>À compléter :</b><ul>${m.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
     <p><b>${d.length ? `<span class="r">${d.length} défaut(s)</span>` : '✅ Aucun défaut'}</b></p>
     <ul class="resume">${d.map(r => `<li class="r">${esc(r.libelle)}${r.note ? ' – ' + esc(r.note) : ''}</li>`).join('')}</ul>
@@ -312,9 +390,10 @@ function aide() {
       <li>Dans cette app, touchez <b>⚙</b> en haut à droite : saisissez le <b>salon Element</b> et <b>votre nom</b>, puis <b>Enregistrer</b>. Ces réglages restent sur le téléphone.</li></ol>
     <h3>Faire une check-list</h3>
     <ol><li><b>Nouvelle check-list véhicule</b>, puis touchez la tuile de votre véhicule.</li>
-      <li>Saisissez le <b>kilométrage</b> (le dernier connu est rappelé) et le niveau de carburant.</li>
-      <li>Pour chaque point : <b>OK</b>, <b>Défaut</b> ou <b>N/A</b> (non applicable). « Tout est OK » remplit la page d’un coup.</li>
-      <li>En cas de <b>défaut</b> : décrivez-le et ajoutez une <b>photo</b> 📷. Touchez une photo pour la supprimer.</li>
+      <li>Saisissez le <b>kilométrage</b> (le dernier connu est rappelé) et touchez le niveau de <b>carburant</b>.</li>
+      <li>Pour chaque point : <b>OK</b>, <b>Défaut</b> ou <b>N/A</b> (non applicable). « Tout le reste est OK » complète la page d’un coup.</li>
+      <li>En cas de <b>défaut</b> : sa <b>description est obligatoire</b> ; ajoutez une <b>photo</b> 📷. Touchez une photo pour la supprimer.</li>
+      <li>Tous les champs sont obligatoires : tant qu’il en manque, <b>Suivant</b> est grisé et un appui montre en rouge ce qui manque.</li>
       <li>Au <b>récapitulatif</b>, vérifiez les défauts et ajoutez un commentaire si besoin.</li></ol>
     <p>La saisie est enregistrée en continu : vous pouvez fermer l’app et reprendre plus tard.</p>
     <h3>Envoyer par Element</h3>
@@ -363,7 +442,7 @@ document.getElementById('reglages').onclick = parametres;
 document.getElementById('aide').onclick = aide;
 document.getElementById('retour').onclick = accueil;
 document.getElementById('prec').onclick = () => { if (etape > 0) { etape--; sauver(); afficher(); } };
-document.getElementById('suiv').onclick = () => { if (etape < nbEtapes - 1) { etape++; sauver(); afficher(); } else envoyer(); };
+document.getElementById('suiv').onclick = suivant;
 
 if (!NATIF && 'serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
 accueil();
