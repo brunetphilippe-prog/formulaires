@@ -3,9 +3,11 @@
 const NATIF = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 // MTG – Check-list état véhicule (PWA hors ligne). Aucune donnée ni adresse dans ce code.
 // Version 8 : envoi par Element (messagerie Matrix) par défaut ; le mail reste disponible en secours.
-// Le fichier envoyé est inchangé (même nom, même format) : l'import dans MTG ne change pas.
+// Version 9 : vers Element, le fichier part en .json (même contenu). Element traite tout fichier
+// « text/plain » (.txt) comme un simple message texte et refuse le partage
+// (« Impossible de traiter les données de partage »). Par mail : toujours .txt.
 const VERSION_FORMAT = 1;
-const VERSION_APP = 8;
+const VERSION_APP = 9;
 
 const SECTIONS = [
   { id: 'ext', titre: 'Extérieur', items: [
@@ -194,10 +196,12 @@ function preparer() {
       date: f.date, agent: f.agent, commentaire: f.commentaire,
       points: Object.entries(f.reponses).map(([cle, r]) => ({ cle, section: r.section, libelle: r.libelle,
         etat: r.etat, note: r.note || '', photos: r.photos || [] })) } };
-  const nom = `etat-vehicule_${f.immat.replace(/[^A-Z0-9]/g, '')}_${f.date}.txt`;
+  const base = `etat-vehicule_${f.immat.replace(/[^A-Z0-9]/g, '')}_${f.date}`;
+  const nom = base + '.txt';         // mail et envoi en 2 gestes
+  const nomJson = base + '.json';    // partage direct vers Element (type application/json)
   const objet = `[MTG] État véhicule ${f.immat} – ${f.date}${defauts().length ? ' – ' + defauts().length + ' défaut(s)' : ''}`;
   const json = JSON.stringify(payload);
-  return { nom, objet, json, corps: texteMail(), fichier: new File([json], nom, { type: 'text/plain' }),
+  return { nom, nomJson, objet, json, corps: texteMail(), fichier: new File([json], nom, { type: 'text/plain' }),
     taille: Math.ceil(json.length / 1024) };
 }
 
@@ -212,7 +216,9 @@ let partageOK = true;
 function ecranEnvoi() {
   const p = preparer();
   const el = viaElement();
-  const partage = NATIF || partageOK && !!(navigator.canShare && navigator.canShare({ files: [p.fichier] }));
+  // Element : partage direct seulement dans l'app Android (fichier .json). Dans un navigateur, le
+  // partage web n'accepte que .txt, qu'Element refuse : on passe directement à l'envoi en 2 gestes.
+  const partage = el ? NATIF : NATIF || partageOK && !!(navigator.canShare && navigator.canShare({ files: [p.fichier] }));
   const salon = adresseSalon();
   document.getElementById('titre').textContent = 'Envoi';
   pied.classList.add('cache'); setProg(nbEtapes - 1);
@@ -222,9 +228,9 @@ function ecranEnvoi() {
   const blocElement = partage ? `
       <p><b>1.</b> Appuyez ci-dessous, choisissez <b>Element</b>, puis le salon <b>${esc(nomSalon())}</b>, et envoyez.</p>
       <button class="btn vert" id="b_share">📤 Envoyer avec Element</button>
-      <p class="sous" style="margin-top:8px">Element doit être installé et connecté sur ce téléphone. Fichier : ${esc(p.nom)} (${p.taille} Ko).</p>`
+      <p class="sous" style="margin-top:8px">Element doit être installé et connecté sur ce téléphone. Fichier : ${esc(p.nomJson)} (${p.taille} Ko).</p>`
     : `
-      <div class="info">Votre navigateur ne transmet pas les fichiers directement. Pour un envoi en un geste, utilisez l’app Android ou <b>Google Chrome</b>.</div>
+      <div class="info">Depuis un navigateur, le fichier se joint à la main dans Element. Pour un envoi en un geste, utilisez l’app Android MTG Véhicule.</div>
       <p><b>1.</b> Enregistrez le fichier sur le téléphone :</p>
       <button class="btn" id="b_dl">💾 Enregistrer le fichier</button>
       <p><b>2.</b> Ouvrez Element${salon ? '' : `, allez dans le salon <b>${esc(nomSalon())}</b>`}, puis joignez le fichier avec le trombone 📎 (dossier <i>Téléchargements</i>, fichier <i>${esc(p.nom)}</i>) :</p>
@@ -260,7 +266,7 @@ function ecranEnvoi() {
     try {
       if (NATIF) {
         const { Filesystem, Share } = window.Capacitor.Plugins;
-        const r = await Filesystem.writeFile({ path: p.nom, data: p.json, directory: 'CACHE', encoding: 'utf8' });
+        const r = await Filesystem.writeFile({ path: el ? p.nomJson : p.nom, data: p.json, directory: 'CACHE', encoding: 'utf8' });
         if (el) await Share.share({ files: [r.uri], dialogTitle: 'Envoyer avec Element' });
         else await Share.share({ title: p.objet, text: p.corps, files: [r.uri], dialogTitle: 'Envoyer par mail' });
       } else await navigator.share({ files: [p.fichier] });
@@ -314,7 +320,7 @@ function aide() {
     <h3>Envoyer par Element</h3>
     <ol><li>Touchez <b>Envoyer par Element</b>, puis <b>📤 Envoyer avec Element</b>.</li>
       <li>Dans la liste qui s’ouvre, choisissez <b>Element</b>, puis le <b>salon de réception MTG</b>, et validez l’envoi.</li>
-      <li>Vérifiez dans Element que le fichier <b>etat-vehicule_….txt</b> apparaît bien dans le salon.</li>
+      <li>Vérifiez dans Element que le fichier <b>etat-vehicule_…</b> (.json) apparaît bien dans le salon.</li>
       <li>Revenez dans l’app et touchez <b>✅ C’est envoyé, terminer</b>. Pas avant : la check-list serait effacée.</li></ol>
     <p>Si le partage est refusé, l’app propose l’envoi en 2 gestes : <b>Enregistrer le fichier</b>, puis l’ajouter dans le salon Element avec le trombone 📎 (dossier Téléchargements).</p>
     <h3>Element indisponible ?</h3>
@@ -322,6 +328,7 @@ function aide() {
     <h3>En cas de problème</h3>
     <ul><li><b>Pas de réseau</b> : finissez la check-list, envoyez plus tard. Rien n’est perdu.</li>
       <li><b>Element n’apparaît pas dans la liste</b> : installez Element, ou envoyez par mail.</li>
+      <li><b>Element affiche « Impossible de traiter les données de partage »</b> : mettez l’app MTG Véhicule à jour (version 9 ou plus).</li>
       <li><b>Le salon n’apparaît pas dans Element</b> : demandez au service MTG de vous y inviter.</li>
       <li><b>Véhicule absent de la liste</b> : prévenez le service MTG.</li>
       <li><b>Fichier envoyé deux fois</b> : sans gravité, le doublon est écarté à l’import.</li>
